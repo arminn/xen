@@ -17,6 +17,8 @@ enum io_state handle_ioserv(struct cpu_user_regs *regs, struct vcpu *v)
 {
     const union hsr hsr = { .bits = regs->hsr };
     const struct hsr_dabt dabt = hsr.dabt;
+    const uint8_t access_size = (1 << dabt.size) * 8;
+    const uint64_t access_mask = GENMASK_ULL(access_size - 1, 0);
     /* Code is similar to handle_read */
     register_t r = v->io.req.data;
 
@@ -27,6 +29,7 @@ enum io_state handle_ioserv(struct cpu_user_regs *regs, struct vcpu *v)
         return IO_HANDLED;
 
     r = sign_extend(dabt, r);
+    r &= access_mask;
 
     set_user_reg(regs, dabt.reg, r);
 
@@ -39,6 +42,8 @@ enum io_state try_fwd_ioserv(struct cpu_user_regs *regs,
     struct vcpu_io *vio = &v->io;
     const struct instr_details instr = info->dabt_instr;
     struct hsr_dabt dabt = info->dabt;
+    const uint8_t access_size = (1 << dabt.size) * 8;
+    const uint64_t access_mask = GENMASK_ULL(access_size - 1, 0);
     ioreq_t p = {
         .type = IOREQ_TYPE_COPY,
         .addr = info->gpa,
@@ -79,8 +84,7 @@ enum io_state try_fwd_ioserv(struct cpu_user_regs *regs,
         return IO_HANDLED;
 
     ASSERT(dabt.valid);
-
-    p.data = get_user_reg(regs, info->dabt.reg);
+    p.data = p.dir ? 0 : get_user_reg(regs, info->dabt.reg) & access_mask;
     vio->req = p;
     vio->suspended = false;
     vio->info.dabt_instr = instr;
